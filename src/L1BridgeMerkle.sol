@@ -3,13 +3,22 @@ pragma solidity ^0.8.13;
 
 import "./interfaces/IScrollGatewayCallback.sol";
 
-contract L1Bridge is IScrollGatewayCallback {
+contract L1BridgeMerkle is IScrollGatewayCallback {
+    mapping(bytes32 => uint256) public amountSent;
     uint256 public balance;
 
     struct BridgeInfo {
         uint64 chainId;
-        address user;
+        uint192 amount;
+        bytes32 merkleRoot;
     }
+
+    struct DataToBridge {
+        uint192 amount;
+        bytes32[] merkleRoots;
+    }
+
+    mapping(uint64 => DataToBridge) public dataToBridges;
 
     mapping(address => bool) public authorizedContracts;
 
@@ -19,14 +28,6 @@ contract L1Bridge is IScrollGatewayCallback {
     mapping(uint64 => bool) public supportedChains;
 
     address private owner;
-
-    event Bridged(
-        address indexed receiver,
-        uint256 amount,
-        uint64 indexed chainId
-    );
-
-    error UnsupportedChain(uint64);
 
     constructor() {
         owner = msg.sender;
@@ -90,27 +91,30 @@ contract L1Bridge is IScrollGatewayCallback {
         uint dif = newBalance - oldBalance;
         require(dif > 0, "No amount");
 
-        BridgeInfo memory bridgeInfo = abi.decode(data, (BridgeInfo));
-        if (bridgeInfo.chainId == 59140) {
-            // linea
-            _sendToLinea(bridgeInfo.user, dif);
-        } else if (bridgeInfo.chainId == 534353) {
-            _sendToScroll(bridgeInfo.user, dif);
-        } else if (bridgeInfo.chainId == 1442) {
-            _sendToPolygonZkEvm(bridgeInfo.user, dif);
-        } else {
-            revert UnsupportedChain(bridgeInfo.chainId);
+        BridgeInfo[] memory bridgeInfos = abi.decode(data, (BridgeInfo[]));
+        uint256 totalAmount;
+        for (uint i = 0; i < bridgeInfos.length; i++) {
+            BridgeInfo memory info = bridgeInfos[i];
+            require(supportedChains[info.chainId], "Unsupported chain");
+            totalAmount += info.amount;
+            // we regroup by chain id to send only one request by chain after
+            DataToBridge storage dataToBridge = dataToBridges[info.chainId];
+            dataToBridge.amount += info.amount;
+            dataToBridge.merkleRoots.push(info.merkleRoot);
         }
-
-        balance = 0;
-        emit Bridged(bridgeInfo.user, dif, bridgeInfo.chainId);
+        // the amount sent need to match with amount sent to user
+        require(totalAmount == dif, "Invalid amount");
     }
 
-    function _sendToPolygonZkEvm(address recipient, uint256 amount) private {
-        address lylx = 0xF6BEEeBB578e214CA9E23B0e9683454Ff88Ed2A7;
+    function proceed() external{
+        for (uint i = 0; i < listChains.length; i++) {
+            uint64 chainId = listChains[i];
+            DataToBridge memory dataTB = dataToBridges[chainId];
+            if(dataTB.amount > 0){
+                // todo code to proceed by gateway
+
+                delete dataToBridges[chainId];
+            }
+        }
     }
-
-    function _sendToScroll(address recipient, uint256 amount) private {}
-
-    function _sendToLinea(address recipient, uint256 amount) private {}
 }
