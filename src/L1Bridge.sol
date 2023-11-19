@@ -36,8 +36,36 @@ contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
 
     receive() external payable {}
 
+    fallback() external payable {
+        // receive after claim message on linea bridge
+        _bridgeData(msg.data);
+    }
+
     function changeOwner(address newOwner) external onlyOwner {
         owner = newOwner;
+    }
+
+    function claimFromLinea(
+        address _from,
+        address _to,
+        uint256 _fee,
+        uint256 _value,
+        address payable _feeRecipient,
+        bytes calldata _calldata,
+        uint256 _nonce
+    ) external {
+        // for linea we need to claim manually the message to bridge
+        address bridge = 0x70BaD09280FD342D02fe64119779BC1f0791BAC2;
+        IMessageService messageService = IMessageService(bridge);
+        messageService.claimMessage(
+            _from,
+            _to,
+            _fee,
+            _value,
+            _feeRecipient,
+            _calldata,
+            _nonce
+        );
     }
 
     function onScrollGatewayCallback(bytes memory data) external {
