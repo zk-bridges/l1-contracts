@@ -6,4 +6,5 @@ Contract deployed on L1 to receipt message from L2 and bridge ether to the corre
 ## Links
 
 [L2 contracts](https://github.com/zk-bridges/contract-evm)
-[Frontend](https://github.com/zk-bridges/frontend-evm)
+
+[Frontend created with nextJS, implement web3Modal](https://github.com/zk-bridges/frontend-evm)
