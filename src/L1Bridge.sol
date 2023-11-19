@@ -41,6 +41,7 @@ contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
     }
 
     function onScrollGatewayCallback(bytes memory data) external {
+        // receive message from scroll l2
         _bridgeData(data);
     }
 
@@ -49,6 +50,7 @@ contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
         uint32,
         bytes memory data
     ) external payable {
+        // receive message from polygon zkevm l2
         _bridgeData(data);
     }
 
@@ -66,8 +68,10 @@ contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
             // linea
             _sendToLinea(bridgeInfo.user, dif);
         } else if (bridgeInfo.chainId == 534353) {
+            // scroll
             _sendToScroll(bridgeInfo.user, dif);
         } else if (bridgeInfo.chainId == 1442) {
+            // polygon zkevm
             _sendToPolygonZkEvm(bridgeInfo.user, dif);
         } else {
             revert UnsupportedChain(bridgeInfo.chainId);
@@ -99,9 +103,9 @@ contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
 
     function _sendToLinea(address recipient, uint256 amount) private {
         address bridge = 0x70BaD09280FD342D02fe64119779BC1f0791BAC2;
-        uint256 maxGas = 1e6;
+        uint256 fees = 127200001484000; // copy from real tx
         IMessageService messageService = IMessageService(bridge);
-        messageService.sendMessage{value: amount}(recipient, maxGas, "");
+        messageService.sendMessage{value: amount}(recipient, fees, "");
     }
 
     function withdraw() external onlyOwner {
