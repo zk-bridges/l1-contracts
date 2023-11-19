@@ -2,22 +2,18 @@
 pragma solidity ^0.8.13;
 
 import "./interfaces/IScrollGatewayCallback.sol";
+import "./interfaces/IPolygonZkEVMBridge.sol";
+import "./interfaces/IBridgeMessageReceiver.sol";
+import "./interfaces/IL1ETHGateway.sol";
+import "./interfaces/IMessageService.sol";
 
-contract L1Bridge is IScrollGatewayCallback {
-    uint256 public balance;
-
+contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
     struct BridgeInfo {
         uint64 chainId;
         address user;
     }
 
-    mapping(address => bool) public authorizedContracts;
-
-    mapping(uint64 => address) public gatewayContracts;
-
-    uint64[] public listChains;
-    mapping(uint64 => bool) public supportedChains;
-
+    uint256 public balance;
     address private owner;
 
     event Bridged(
@@ -27,6 +23,7 @@ contract L1Bridge is IScrollGatewayCallback {
     );
 
     error UnsupportedChain(uint64);
+    error FailedWithdraw();
 
     constructor() {
         owner = msg.sender;
@@ -37,58 +34,32 @@ contract L1Bridge is IScrollGatewayCallback {
         _;
     }
 
-    receive() external payable {
-        require(authorizedContracts[msg.sender], "Unauthorized contracts");
-    }
+    receive() external payable {}
 
     function changeOwner(address newOwner) external onlyOwner {
         owner = newOwner;
     }
 
-    function setAuthorizedContracts(
-        address contractAddress,
-        bool authorized
-    ) external onlyOwner {
-        authorizedContracts[contractAddress] = authorized;
-    }
-
-    function setGatewayByChain(
-        uint64 chainId,
-        address contractAddress
-    ) external onlyOwner {
-        gatewayContracts[chainId] = contractAddress;
-    }
-
-    function addSupportedChain(
-        uint64 chainId,
-        bool supported
-    ) external onlyOwner {
-        supportedChains[chainId] = supported;
-        if (supported) {
-            listChains.push(chainId);
-        } else {
-            int256 index = -1;
-            for (uint i = 0; i < listChains.length; i++) {
-                if (listChains[i] == chainId) {
-                    index = int256(i);
-                    break;
-                }
-            }
-            if (index > -1) {
-                // delete element in array
-                listChains[uint256(index)] = listChains[listChains.length - 1];
-                listChains.pop();
-            }
-        }
-    }
-
     function onScrollGatewayCallback(bytes memory data) external {
-        require(authorizedContracts[msg.sender], "Unauthorized contracts");
+        _bridgeData(data);
+    }
+
+    function onMessageReceived(
+        address,
+        uint32,
+        bytes memory data
+    ) external payable {
+        _bridgeData(data);
+    }
+
+    function _bridgeData(bytes memory data) private {
         // we check we have send amount with this bridge
         uint256 oldBalance = balance;
         uint256 newBalance = address(this).balance;
         uint dif = newBalance - oldBalance;
         require(dif > 0, "No amount");
+
+        balance -= dif;
 
         BridgeInfo memory bridgeInfo = abi.decode(data, (BridgeInfo));
         if (bridgeInfo.chainId == 59140) {
@@ -102,15 +73,43 @@ contract L1Bridge is IScrollGatewayCallback {
             revert UnsupportedChain(bridgeInfo.chainId);
         }
 
-        balance = 0;
         emit Bridged(bridgeInfo.user, dif, bridgeInfo.chainId);
     }
 
     function _sendToPolygonZkEvm(address recipient, uint256 amount) private {
         address lylx = 0xF6BEEeBB578e214CA9E23B0e9683454Ff88Ed2A7;
+        // 1 for zkevm testnet
+        uint32 networkId = 1;
+
+        IPolygonZkEVMBridge zkEvmBridge = IPolygonZkEVMBridge(lylx);
+        zkEvmBridge.bridgeMessage{value: amount}(
+            networkId,
+            recipient,
+            false,
+            ""
+        );
     }
 
-    function _sendToScroll(address recipient, uint256 amount) private {}
+    function _sendToScroll(address recipient, uint256 amount) private {
+        address gateway = 0x429b73A21cF3BF1f3E696a21A95408161daF311f;
+        IL1ETHGateway l1Gateway = IL1ETHGateway(gateway);
+        uint256 maxGas = 1e6;
+        l1Gateway.depositETH{value: amount}(recipient, amount, maxGas);
+    }
 
-    function _sendToLinea(address recipient, uint256 amount) private {}
+    function _sendToLinea(address recipient, uint256 amount) private {
+        address bridge = 0x70BaD09280FD342D02fe64119779BC1f0791BAC2;
+        uint256 maxGas = 1e6;
+        IMessageService messageService = IMessageService(bridge);
+        messageService.sendMessage{value: amount}(recipient, maxGas, "");
+    }
+
+    function withdraw() external onlyOwner {
+        // remove stuck funds
+        (bool sent, ) = payable(owner).call{value: address(this).balance}("");
+        if (!sent) {
+            revert FailedWithdraw();
+        }
+        balance = 0;
+    }
 }
