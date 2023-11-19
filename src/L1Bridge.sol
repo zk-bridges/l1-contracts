@@ -33,11 +33,6 @@ contract L1Bridge is
     error UnsupportedChain(uint64);
     error FailedWithdraw();
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
     function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
     }
