@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.20;
 
 import "./interfaces/IScrollGatewayCallback.sol";
 import "./interfaces/IPolygonZkEVMBridge.sol";
 import "./interfaces/IBridgeMessageReceiver.sol";
 import "./interfaces/IL1ETHGateway.sol";
 import "./interfaces/IMessageService.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
+contract L1Bridge is
+    Initializable,
+    OwnableUpgradeable,
+    IScrollGatewayCallback,
+    IBridgeMessageReceiver
+{
     struct BridgeInfo {
         uint64 chainId;
         address user;
     }
 
     uint256 public balance;
-    address private owner;
 
     event Bridged(
         address indexed receiver,
@@ -22,16 +28,18 @@ contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
         uint64 indexed chainId
     );
 
+    event Withdraw(address indexed receiver, uint256 amount);
+
     error UnsupportedChain(uint64);
     error FailedWithdraw();
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
-        owner = msg.sender;
+        _disableInitializers();
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Not owner");
-        _;
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init(initialOwner);
     }
 
     receive() external payable {}
@@ -39,10 +47,6 @@ contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
     fallback() external payable {
         // receive after claim message on linea bridge
         _bridgeData(msg.data);
-    }
-
-    function changeOwner(address newOwner) external onlyOwner {
-        owner = newOwner;
     }
 
     function claimFromLinea(
@@ -138,10 +142,13 @@ contract L1Bridge is IScrollGatewayCallback, IBridgeMessageReceiver {
 
     function withdraw() external onlyOwner {
         // remove stuck funds
-        (bool sent, ) = payable(owner).call{value: address(this).balance}("");
+        uint256 amount = address(this).balance;
+        (bool sent, ) = payable(owner()).call{value: amount}("");
         if (!sent) {
             revert FailedWithdraw();
         }
         balance = 0;
+
+        emit Withdraw(owner(), amount);
     }
 }
