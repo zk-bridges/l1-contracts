@@ -86,6 +86,26 @@ contract L1Bridge is
         _bridgeData(data);
     }
 
+    function withdraw() external onlyOwner {
+        // remove stuck funds
+        uint256 amount = address(this).balance;
+        (bool sent, ) = payable(owner()).call{value: amount}("");
+        if (!sent) {
+            revert FailedWithdraw();
+        }
+        balance = 0;
+
+        emit Withdraw(owner(), amount);
+    }
+
+    function formatData(
+        address receiver,
+        uint64 chainId
+    ) external pure returns (bytes memory) {
+        BridgeInfo memory info = BridgeInfo(chainId, receiver);
+        return abi.encode(info);
+    }
+
     function _bridgeData(bytes memory data) private {
         // we check we have send amount with this bridge
         uint256 oldBalance = balance;
@@ -138,17 +158,5 @@ contract L1Bridge is
         uint256 fees = 127200001484000; // copy from real tx
         IMessageService messageService = IMessageService(bridge);
         messageService.sendMessage{value: amount}(recipient, fees, "");
-    }
-
-    function withdraw() external onlyOwner {
-        // remove stuck funds
-        uint256 amount = address(this).balance;
-        (bool sent, ) = payable(owner()).call{value: amount}("");
-        if (!sent) {
-            revert FailedWithdraw();
-        }
-        balance = 0;
-
-        emit Withdraw(owner(), amount);
     }
 }
