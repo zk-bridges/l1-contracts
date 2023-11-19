@@ -69,6 +69,32 @@ contract L1BridgeTest is Test {
         vm.stopPrank();
     }
 
+    function testPolygonToLinea() public {
+        address receiver = alice;
+        uint256 amount = 0.1 ether;
+        deal(deployer, amount);
+        vm.startPrank(deployer);
+        uint64 chainId = 59140;
+        bytes memory data = bridge.formatData(receiver, chainId);
+        bridge.onMessageReceived{value: amount}(address(0), 0, data);
+        assertEq(address(bridge).balance, 0);
+        assertEq(bridge.lastTransfer(), 0);
+        vm.stopPrank();
+    }
+
+    function testPolygonToScroll() public {
+        address receiver = charlie;
+        uint256 amount = 0.15 ether;
+        deal(deployer, amount);
+        vm.startPrank(deployer);
+        uint64 chainId = 59140;
+        bytes memory data = bridge.formatData(receiver, chainId);
+        bridge.onMessageReceived{value: amount}(address(0), 0, data);
+        assertEq(address(bridge).balance, 0);
+        assertEq(bridge.lastTransfer(), 0);
+        vm.stopPrank();
+    }
+
     error NoAmount();
     error UnsupportedChain(uint64);
 
