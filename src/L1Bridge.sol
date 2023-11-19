@@ -8,6 +8,7 @@ import "./interfaces/IL1ETHGateway.sol";
 import "./interfaces/IMessageService.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "forge-std/Test.sol";
 
 contract L1Bridge is
     Initializable,
@@ -15,12 +16,12 @@ contract L1Bridge is
     IScrollGatewayCallback,
     IBridgeMessageReceiver
 {
+    uint256 public lastTransfer;
+
     struct BridgeInfo {
         uint64 chainId;
         address user;
     }
-
-    uint256 public balance;
 
     event Bridged(
         address indexed receiver,
@@ -32,16 +33,22 @@ contract L1Bridge is
 
     error UnsupportedChain(uint64);
     error FailedWithdraw();
+    error NoAmount();
 
     function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
     }
 
-    receive() external payable {}
+    receive() external payable {
+        lastTransfer = msg.value;
+    }
 
     fallback() external payable {
+        lastTransfer = msg.value;
         // receive after claim message on linea bridge
-        _bridgeData(msg.data);
+        if (msg.data.length > 0) {
+            _bridgeData(msg.data);
+        }
     }
 
     function claimFromLinea(
@@ -77,6 +84,7 @@ contract L1Bridge is
         uint32,
         bytes memory data
     ) external payable {
+        lastTransfer = msg.value;
         // receive message from polygon zkevm l2
         _bridgeData(data);
     }
@@ -88,7 +96,8 @@ contract L1Bridge is
         if (!sent) {
             revert FailedWithdraw();
         }
-        balance = 0;
+
+        lastTransfer = 0;
 
         emit Withdraw(owner(), amount);
     }
@@ -103,28 +112,26 @@ contract L1Bridge is
 
     function _bridgeData(bytes memory data) private {
         // we check we have send amount with this bridge
-        uint256 oldBalance = balance;
-        uint256 newBalance = address(this).balance;
-        uint dif = newBalance - oldBalance;
-        require(dif > 0, "No amount");
-
-        balance -= dif;
-
+        if (lastTransfer == 0) {
+            revert NoAmount();
+        }
+        uint256 amount = lastTransfer;
+        lastTransfer = 0;
         BridgeInfo memory bridgeInfo = abi.decode(data, (BridgeInfo));
         if (bridgeInfo.chainId == 59140) {
             // linea
-            _sendToLinea(bridgeInfo.user, dif);
+            _sendToLinea(bridgeInfo.user, amount);
         } else if (bridgeInfo.chainId == 534353) {
             // scroll
-            _sendToScroll(bridgeInfo.user, dif);
+            _sendToScroll(bridgeInfo.user, amount);
         } else if (bridgeInfo.chainId == 1442) {
             // polygon zkevm
-            _sendToPolygonZkEvm(bridgeInfo.user, dif);
+            _sendToPolygonZkEvm(bridgeInfo.user, amount);
         } else {
             revert UnsupportedChain(bridgeInfo.chainId);
         }
 
-        emit Bridged(bridgeInfo.user, dif, bridgeInfo.chainId);
+        emit Bridged(bridgeInfo.user, amount, bridgeInfo.chainId);
     }
 
     function _sendToPolygonZkEvm(address recipient, uint256 amount) private {

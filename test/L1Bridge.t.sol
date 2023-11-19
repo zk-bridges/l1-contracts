@@ -36,15 +36,64 @@ contract L1BridgeTest is Test {
         vm.stopPrank();
     }
 
-    function testScrollToLinea(address receiver, uint256 amount) public {
+    function testScrollToLinea() public {
+        address receiver = bob;
+        uint256 amount = 0.5 ether;
+        console.log("amount %s", amount);
         deal(deployer, amount);
         vm.startPrank(deployer);
         uint64 chainId = 59140;
         bytes memory data = bridge.formatData(receiver, chainId);
         address(bridge).call{value: amount}("");
-        //bridge.onScrollGatewayCallback(data);
-        assertEq(1, 1);
+        assertEq(address(bridge).balance, amount);
+        assertEq(bridge.lastTransfer(), amount);
+        bridge.onScrollGatewayCallback(data);
+        assertEq(address(bridge).balance, 0);
+        assertEq(bridge.lastTransfer(), 0);
         vm.stopPrank();
+    }
+
+    function testScrollToPolygon() public {
+        address receiver = alice;
+        uint256 amount = 0.1 ether;
+        deal(deployer, amount);
+        vm.startPrank(deployer);
+        uint64 chainId = 1442;
+        bytes memory data = bridge.formatData(receiver, chainId);
+        address(bridge).call{value: amount}("");
+        assertEq(address(bridge).balance, amount);
+        assertEq(bridge.lastTransfer(), amount);
+        bridge.onScrollGatewayCallback(data);
+        assertEq(address(bridge).balance, 0);
+        assertEq(bridge.lastTransfer(), 0);
+        vm.stopPrank();
+    }
+
+    error NoAmount();
+    error UnsupportedChain(uint64);
+
+    function testScrollNoAmount() public {
+        address receiver = bob;
+        uint64 chainId = 59140;
+        bytes memory data = bridge.formatData(receiver, chainId);
+        vm.expectRevert(NoAmount.selector);
+        bridge.onScrollGatewayCallback(data);
+    }
+
+    function testScrollBadChain() public {
+        address receiver = bob;
+        uint256 amount = 0.1 ether;
+        deal(deployer, amount);
+        vm.startPrank(deployer);
+        uint64 chainId = 333;
+        bytes memory data = bridge.formatData(receiver, chainId);
+        address(bridge).call{value: amount}("");
+        bytes memory unsupported = abi.encodeWithSelector(
+            UnsupportedChain.selector,
+            chainId
+        );
+        vm.expectRevert(unsupported);
+        bridge.onScrollGatewayCallback(data);
     }
 
     function _deployProxy(
